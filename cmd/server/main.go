@@ -3,6 +3,7 @@ package main
 import (
 	"TFirewall"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -52,60 +53,131 @@ func listenTCP(listener *net.TCPListener) {
 	}
 
 }
+func Server(listen *net.TCPListener, s5listen *net.TCPListener) {
+	for {
+		s5conn, err := s5listen.Accept()
+		if err != nil {
+			fmt.Println("Error on accept socks5 connect : ", err.Error())
+			continue
+		}
+		fmt.Println("Socks5 new socket from : ", s5conn.RemoteAddr().String())
+		defer s5conn.Close()
+
+		controlconn, err := listen.Accept()
+		if err != nil {
+			fmt.Println("Error on accept control connect :", err.Error())
+			continue
+		}
+		fmt.Println("Control new socket from : ", controlconn.RemoteAddr().String())
+		defer controlconn.Close()
+
+		go handle(controlconn, s5conn)
+	}
+}
+
+func handle(sconn net.Conn, dconn net.Conn) {
+	defer sconn.Close()
+	defer dconn.Close()
+	ExitChan := make(chan bool, 1)
+	go func(sconn net.Conn, dconn net.Conn, Exit chan bool) {
+		io.Copy(dconn, sconn)
+		ExitChan <- true
+	}(sconn, dconn, ExitChan)
+
+	go func(sconn net.Conn, dconn net.Conn, Exit chan bool) {
+		io.Copy(sconn, dconn)
+		ExitChan <- true
+	}(sconn, dconn, ExitChan)
+	<-ExitChan
+	dconn.Close()
+}
+
+func ErrHandler(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
 
 func main() {
-	portslice := []int{}
-	if len(os.Args) > 1 {
-		portListStrs := strings.Split(os.Args[1], ",")
-		for i := 0; i < len(portListStrs); i++ {
-			if strings.Contains(portListStrs[i], "-") {
-				parts := strings.Split(portListStrs[i], "-")
-				start, err := strconv.Atoi(parts[0])
-				if err == nil {
-					end, err := strconv.Atoi(parts[1])
+
+	if len(os.Args) < 2 {
+		fmt.Println("usage:\n server check\n server check 20-22,80-90,22")
+		fmt.Println("usage:\n server socks5 80")
+		os.Exit(1)
+	}
+
+	if strings.EqualFold(os.Args[1], "check") {
+		portslice := []int{}
+		if len(os.Args) > 2 {
+			portListStrs := strings.Split(os.Args[2], ",")
+			for i := 0; i < len(portListStrs); i++ {
+				if strings.Contains(portListStrs[i], "-") {
+					parts := strings.Split(portListStrs[i], "-")
+					start, err := strconv.Atoi(parts[0])
 					if err == nil {
-						for port := start; port < end; port++ {
-							if !TFirewall.Contain(portslice, port) {
-								portslice = append(portslice, port)
+						end, err := strconv.Atoi(parts[1])
+						if err == nil {
+							for port := start; port < end; port++ {
+								if !TFirewall.Contain(portslice, port) {
+									portslice = append(portslice, port)
+								}
 							}
 						}
 					}
-				}
-			} else {
-				intPort, err := strconv.Atoi(portListStrs[i])
-				if err == nil {
-					if !TFirewall.Contain(portslice, intPort) {
-						portslice = append(portslice, intPort)
+				} else {
+					intPort, err := strconv.Atoi(portListStrs[i])
+					if err == nil {
+						if !TFirewall.Contain(portslice, intPort) {
+							portslice = append(portslice, intPort)
+						}
 					}
 				}
 			}
+		} else {
+			portslice = TFirewall.TcpPorts()
 		}
-	} else {
-		portslice = TFirewall.TcpPorts()
-	}
-	fmt.Println("Server listening: ", portslice)
-	for _, port := range portslice {
-		tcpAddr, err := net.ResolveTCPAddr("tcp", ":"+strconv.Itoa(port))
-		checkError(err)
-		tcpListener, err := net.ListenTCP("tcp", tcpAddr)
-		defer tcpListener.Close()
-		go listenTCP(tcpListener)
-		checkError(err)
-	}
+		fmt.Println("Check Server listening: ", portslice)
+		for _, port := range portslice {
+			tcpAddr, err := net.ResolveTCPAddr("tcp", ":"+strconv.Itoa(port))
+			checkError(err)
+			tcpListener, err := net.ListenTCP("tcp", tcpAddr)
+			defer tcpListener.Close()
+			go listenTCP(tcpListener)
+			checkError(err)
+		}
 
-	for _, port := range portslice {
-		udpAddr, err := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(port))
-		checkError(err)
-		udpconn, err := net.ListenUDP("udp", udpAddr)
-		defer udpconn.Close()
-		checkError(err)
-		go recvUDP(udpconn)
-	}
+		for _, port := range portslice {
+			udpAddr, err := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(port))
+			checkError(err)
+			udpconn, err := net.ListenUDP("udp", udpAddr)
+			defer udpconn.Close()
+			checkError(err)
+			go recvUDP(udpconn)
+		}
+		c := make(chan os.Signal)
+		//监听所有信号
+		signal.Notify(c)
+		//阻塞直到有信号传入
+		s := <-c
+		fmt.Println("exit : ", s)
+	} else if strings.EqualFold(os.Args[1], "socks5") {
+		if len(os.Args) > 3 {
+			var ip = "0.0.0.0"
+			port, _ := strconv.Atoi(os.Args[2])
+			s5port, _ := strconv.Atoi(os.Args[3])
 
-	c := make(chan os.Signal)
-	//监听所有信号
-	signal.Notify(c)
-	//阻塞直到有信号传入
-	s := <-c
-	fmt.Println("exit : ", s)
+			lis, err := net.ListenTCP("tcp", &net.TCPAddr{net.ParseIP(ip), port, ""})
+			ErrHandler(err)
+			defer lis.Close()
+			fmt.Println("Control Listening: ", port)
+			s5lis, err := net.ListenTCP("tcp", &net.TCPAddr{net.ParseIP(ip), s5port, ""})
+			ErrHandler(err)
+			defer s5lis.Close()
+			fmt.Println("Socks5 Listening: ", s5port)
+
+			Server(lis, s5lis)
+		} else {
+			fmt.Println("usage:\n server socks5 80 1080 (80 is control port,1080 is socks5 port)")
+		}
+	}
 }
