@@ -3,6 +3,7 @@ package main
 import (
 	"TFirewall"
 	"bytes"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -104,6 +105,25 @@ func connect_socks5_server(serverip string, serverport string) {
 	}
 }
 
+func connect_socks5_server_tls(serverip string, serverport string) {
+	conf := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+
+	var RemoteConn net.Conn
+	var err error
+	for {
+		for {
+			//RemoteConn, err = net.Dial("tcp", serverip+":"+serverport)
+			RemoteConn, err = tls.Dial("tcp", serverip+":"+serverport, conf)
+			if err == nil {
+				break
+			}
+		}
+		go handleClientRequest(RemoteConn)
+	}
+}
+
 func main() {
 	if len(os.Args) < 3 {
 		fmt.Println("usage:\n client check 192.168.1.100\n client check 192.168.1.100 20-22,80-90,22")
@@ -155,8 +175,10 @@ func main() {
 		}
 		fmt.Println("check finish")
 	} else if strings.EqualFold(os.Args[1], "socks5") {
-		if len(os.Args) > 3 {
+		if len(os.Args) == 4 {
 			connect_socks5_server(os.Args[2], os.Args[3])
+		} else if len(os.Args) == 5 {
+			connect_socks5_server_tls(os.Args[2], os.Args[3])
 		} else {
 			fmt.Println("usage:\n client socks5 192.168.1.100 80")
 		}

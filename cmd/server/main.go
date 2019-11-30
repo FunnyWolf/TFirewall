@@ -2,8 +2,10 @@ package main
 
 import (
 	"TFirewall"
+	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -74,6 +76,27 @@ func Server(listen *net.TCPListener, s5listen *net.TCPListener) {
 		go handle(controlconn, s5conn)
 	}
 }
+func TLSServer(listen net.Listener, s5listen *net.TCPListener) {
+	for {
+		s5conn, err := s5listen.Accept()
+		if err != nil {
+			fmt.Println("Error on accept socks5 connect : ", err.Error())
+			continue
+		}
+		fmt.Println("Socks5 new socket from : ", s5conn.RemoteAddr().String())
+		defer s5conn.Close()
+
+		controlconn, err := listen.Accept()
+		if err != nil {
+			fmt.Println("Error on accept control connect :", err.Error())
+			continue
+		}
+		fmt.Println("Control new socket from : ", controlconn.RemoteAddr().String())
+		defer controlconn.Close()
+
+		go handle(controlconn, s5conn)
+	}
+}
 
 func handle(sconn net.Conn, dconn net.Conn) {
 	defer sconn.Close()
@@ -102,7 +125,7 @@ func main() {
 
 	if len(os.Args) < 2 {
 		fmt.Println("usage:\n server check\n server check 20-22,80-90,22")
-		fmt.Println("usage:\n server socks5 80")
+		fmt.Println("usage:\n server socks5 80 1080")
 		os.Exit(1)
 	}
 
@@ -161,7 +184,7 @@ func main() {
 		s := <-c
 		fmt.Println("exit : ", s)
 	} else if strings.EqualFold(os.Args[1], "socks5") {
-		if len(os.Args) > 3 {
+		if len(os.Args) == 4 {
 			var ip = "0.0.0.0"
 			port, _ := strconv.Atoi(os.Args[2])
 			s5port, _ := strconv.Atoi(os.Args[3])
@@ -176,6 +199,34 @@ func main() {
 			fmt.Println("Socks5 Listening: ", s5port)
 
 			Server(lis, s5lis)
+		} else if len(os.Args) == 5 {
+			var ip = "0.0.0.0"
+			port, _ := strconv.Atoi(os.Args[2])
+			s5port, _ := strconv.Atoi(os.Args[3])
+			log.Printf(os.Args[0])
+			cert, err := tls.LoadX509KeyPair("server.pem", "server.key")
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			config := &tls.Config{Certificates: []tls.Certificate{cert}}
+
+			lis, err := tls.Listen("tcp", fmt.Sprintf("%s:%d", ip, port), config)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+
+			ErrHandler(err)
+			defer lis.Close()
+			fmt.Println("Control Listening: ", port)
+			s5lis, err := net.ListenTCP("tcp", &net.TCPAddr{net.ParseIP(ip), s5port, ""})
+			ErrHandler(err)
+			defer s5lis.Close()
+			fmt.Println("Socks5 Listening: ", s5port)
+
+			TLSServer(lis, s5lis)
+
 		} else {
 			fmt.Println("usage:\n server socks5 80 1080 (80 is control port,1080 is socks5 port)")
 		}
