@@ -18,8 +18,10 @@ root@taZ:~# ./server_linux_x64 check 20-23,53,80
 Check Server listening:  [20 21 22 23 53 80]
 ```
 * 通过WEBShell管理工具将```client_win_x86.exe```上传到已控服务器
-* 运行```client_win_x86.exe check 10.10.10.10```测试TOP10端口哪些可以出网(服务端对应命令```.\server_linux_x64 check```)
-* 运行```client_win_x86.exe  check 10.10.10.10 20-23,53,80```探测指定端口(服务端对应命令```.\server_linux_x64 check 20-23,53,80```)
+* 运行```client_win_x86.exe check 10.10.10.10```测试TOP10端口哪些可以出网
+> 服务端对应命令```.\server_linux_x64 check```
+* 运行```client_win_x86.exe  check 10.10.10.10 20-23,53,80```探测指定端口
+> 服务端对应命令```.\server_linux_x64 check 20-23,53,80```
 * 观察服务端输出即可查看客户端可以连接服务端哪些端口,使用什么协议
 
 ```
